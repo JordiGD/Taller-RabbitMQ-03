@@ -1,0 +1,99 @@
+version: '3.8'
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+
+  producer:
+    build: .
+    container_name: routing_producer
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq
+    command: ["python3", "/app/producer.py", "info", "Mensaje de prueba desde Docker"]
+    restart: "no"
+
+  worker:
+    build: .
+    container_name: routing_worker
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      WORKER_NAME: routing_worker
+    command: ["python3", "/app/worker.py", "info", "warning", "error"]
+    restart: unless-stopped
+
+  publisher:
+    build: .
+    container_name: news_publisher
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq
+    command: ["python3", "/app/publisher.py"]
+    restart: "no"
+
+  subscriber-sports:
+    build: .
+    container_name: sports_subscriber
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq
+    command: ["python3", "/app/subscriber.py", "Sports Fan", "SPORTS"]
+    restart: unless-stopped
+
+  subscriber-tech:
+    build: .
+    container_name: tech_subscriber
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq
+    command: ["python3", "/app/subscriber.py", "Tech Reader", "TECH", "SCIENCE"]
+    restart: unless-stopped
+
+  subscriber-breaking:
+    build: .
+    container_name: breaking_subscriber
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq
+    command: ["python3", "/app/subscriber.py", "Breaking News", "BREAKING"]
+    restart: unless-stopped
+
+  subscriber-general:
+    build: .
+    container_name: general_subscriber
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq
+    command: ["python3", "/app/subscriber.py", "General Reader"]
+    restart: unless-stopped
+
+volumes:
+  rabbitmq_data:
