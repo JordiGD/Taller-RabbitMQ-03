@@ -3,14 +3,7 @@ import pika
 import sys
 import json
 import os
-import logging
 from datetime import datetime
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 class NewsSubscriber:
     def __init__(self, subscriber_name="subscriber", categories=None):
@@ -24,7 +17,6 @@ class NewsSubscriber:
         self.connect()
     
     def connect(self):
-        """Establece conexión con RabbitMQ"""
         try:
             self.connection = pika.BlockingConnection(
                 pika.ConnectionParameters(host=self.host)
@@ -36,6 +28,7 @@ class NewsSubscriber:
                 exchange_type='fanout',
                 durable=True
             )
+            
             result = self.channel.queue_declare(queue='', exclusive=True)
             self.queue_name = result.method.queue
             
@@ -43,20 +36,12 @@ class NewsSubscriber:
                 exchange=self.exchange_name, 
                 queue=self.queue_name
             )
-            
-            logger.info(f"Suscriptor '{self.subscriber_name}' conectado")
-            logger.info(f"Cola: {self.queue_name}")
-            if self.categories:
-                logger.info(f"Filtrando categorías: {', '.join(self.categories)}")
-            else:
-                logger.info("Recibiendo TODAS las categorías")
                 
         except Exception as e:
-            logger.error(f"Error conectando a RabbitMQ: {e}")
+            print(f"Error conectando a RabbitMQ: {e}")
             sys.exit(1)
     
     def callback(self, ch, method, properties, body):
-        """Procesa mensaje recibido"""
         try:
             message = json.loads(body.decode('utf-8'))
             
@@ -66,30 +51,27 @@ class NewsSubscriber:
             timestamp = message.get('timestamp', 'Sin fecha')
             publisher_id = message.get('publisher_id', 'Desconocido')
             
+            # Filtrar por categorías si se especificaron
             if self.categories and category not in self.categories:
-                logger.debug(f"Mensaje filtrado - categoría '{category}' no en {self.categories}")
                 return
             
+            # Formatear timestamp
             try:
                 dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
                 formatted_time = dt.strftime('%H:%M:%S')
             except:
                 formatted_time = timestamp
             
-            print(f"\n [{category}] {title}")
-            print(f"{formatted_time} | {self.subscriber_name}")
-            print(f"{content}")
-            print(f"Publisher: {publisher_id}")
-            print("-" * 60)
+            print(f"[x] {self.subscriber_name} received [{category}] {title}")
+            print(f"    Time: {formatted_time}")
+            print(f"    Content: {content}")
             
         except json.JSONDecodeError:
-            logger.error("Error decodificando mensaje JSON")
+            print("Error decodificando mensaje JSON")
         except Exception as e:
-            logger.error(f"Error procesando mensaje: {e}")
-    
+            print(f"Error procesando mensaje: {e}")
     
     def start_consuming(self):
-        """Inicia el consumo de mensajes"""
         try:
             self.channel.basic_consume(
                 queue=self.queue_name,
@@ -97,45 +79,29 @@ class NewsSubscriber:
                 auto_ack=True
             )
             
-            print(f"\n{self.subscriber_name} esperando noticias...")
-            print("   Presiona CTRL+C para salir\n")
+            print(f"[*] {self.subscriber_name} waiting for messages. To exit press CTRL+C")
+            if self.categories:
+                print(f"[*] Filtering categories: {', '.join(self.categories)}")
             
             self.channel.start_consuming()
             
         except KeyboardInterrupt:
-            print(f"\n👋 {self.subscriber_name} desconectándose...")
             self.stop_consuming()
         except Exception as e:
-            logger.error(f"Error en consumo: {e}")
+            print(f"Error en consumo: {e}")
     
     def stop_consuming(self):
-        """Detiene el consumo"""
         if self.channel:
             self.channel.stop_consuming()
         if self.connection and not self.connection.is_closed:
             self.connection.close()
-        logger.info("Suscriptor desconectado")
 
 def main():
     if len(sys.argv) < 2:
-        print("""
-News Subscriber - Patrón Publish/Subscribe
-
-Uso:
-  python subscriber.py <nombre_suscriptor> [categorías...]
-
-Ejemplos:
-  python subscriber.py "Deportes Fan" SPORTS           # Solo deportes
-  python subscriber.py "Tech Reader" TECH SCIENCE      # Tecnología y ciencia  
-  python subscriber.py "Breaking News" BREAKING        # Solo noticias urgentes
-  python subscriber.py "General Reader"                # Todas las categorías
-
-Categorías disponibles:
-  TECH, SPORTS, BREAKING, ECONOMY, HEALTH, POLITICS, SCIENCE, ENTERTAINMENT
-
-Nota: En el patrón publish/subscribe, TODOS los suscriptores reciben TODOS 
-      los mensajes del exchange. Las categorías aquí son filtros locales.
-        """)
+        print("Usage: python subscriber.py <subscriber_name> [categories...]")
+        print("Example: python subscriber.py 'Sports Fan' SPORTS")
+        print("Example: python subscriber.py 'Tech Reader' TECH SCIENCE")
+        print("Example: python subscriber.py 'General Reader'")
         sys.exit(1)
     
     subscriber_name = sys.argv[1]
